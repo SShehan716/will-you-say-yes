@@ -8,6 +8,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Google accounts are always verified; email/password accounts must click the email link first.
+    function verified() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
     function str(v, max) {
       return v is string && v.size() <= max;
     }
@@ -43,11 +48,11 @@ service cloud.firestore {
       allow get: if true;
       allow list: if signedIn() && resource.data.ownerId == request.auth.uid;
 
-      allow create: if signedIn()
+      allow create: if verified()
         && validProposal(request.resource.data)
         && request.resource.data.createdAt == request.time;
 
-      allow update: if signedIn()
+      allow update: if verified()
         && resource.data.ownerId == request.auth.uid
         && validProposal(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt;

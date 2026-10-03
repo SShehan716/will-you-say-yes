@@ -8,6 +8,8 @@ import { authErrorMessage, useAuth } from "@/components/AuthProvider";
 import { LIMITS } from "@/lib/limits";
 import type { Gender } from "@/lib/types";
 
+const MIN_PASSWORD = 8;
+
 const GENDERS: { id: Gender; label: string; emoji: string }[] = [
   { id: "boy", label: "Boy", emoji: "🙋‍♂️" },
   { id: "girl", label: "Girl", emoji: "🙋‍♀️" },
@@ -21,6 +23,8 @@ function RegisterForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [gender, setGender] = useState<Gender>("boy");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -29,12 +33,14 @@ function RegisterForm() {
     if (user && !busy) router.replace(next);
   }, [user, busy, next, router]);
 
-  const run = async (fn: () => Promise<void>) => {
+  const mismatch = confirm.length > 0 && confirm !== password;
+
+  const run = async (fn: () => Promise<void>, after: string) => {
     setError("");
     setBusy(true);
     try {
       await fn();
-      router.replace(next);
+      router.replace(after);
     } catch (err) {
       setError(authErrorMessage(err));
       setBusy(false);
@@ -47,7 +53,12 @@ function RegisterForm() {
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
-          void run(() => register({ name: name.trim(), email, password, gender }));
+          if (password.length < MIN_PASSWORD) return setError(`Password must be at least ${MIN_PASSWORD} characters.`);
+          if (password !== confirm) return setError("Passwords don't match.");
+          void run(
+            () => register({ name: name.trim(), email: email.trim(), password, gender }),
+            `/verify-email?next=${encodeURIComponent(next)}`,
+          );
         }}
       >
         <div>
@@ -77,18 +88,51 @@ function RegisterForm() {
           <input id="email" type="email" required autoComplete="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
         <div>
-          <label className="label" htmlFor="password">Password</label>
-          <input id="password" type="password" required minLength={6} autoComplete="new-password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <div className="flex items-center justify-between">
+            <label className="label" htmlFor="password">Password</label>
+            <button type="button" className="mb-1.5 text-xs font-bold text-rose-500 hover:underline" onClick={() => setShowPassword((s) => !s)}>
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
+          <input
+            id="password"
+            type={showPassword ? "text" : "password"}
+            required
+            minLength={MIN_PASSWORD}
+            autoComplete="new-password"
+            className="input"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            aria-describedby="password-hint"
+          />
+          <p id="password-hint" className="mt-1.5 text-xs text-ink-soft">At least {MIN_PASSWORD} characters.</p>
+        </div>
+        <div>
+          <label className="label" htmlFor="confirm">Confirm password</label>
+          <input
+            id="confirm"
+            type={showPassword ? "text" : "password"}
+            required
+            autoComplete="new-password"
+            className={`input ${mismatch ? "!border-red-300 focus:!ring-red-100" : ""}`}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            aria-invalid={mismatch}
+            aria-describedby="confirm-hint"
+          />
+          <p id="confirm-hint" className={`mt-1.5 text-xs font-semibold ${mismatch ? "text-red-600" : "text-emerald-600"}`} aria-live="polite">
+            {mismatch ? "Passwords don't match." : confirm && confirm === password ? "Passwords match ✓" : "\u00a0"}
+          </p>
         </div>
         {error && <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">{error}</p>}
-        <button type="submit" className="btn-primary w-full" disabled={busy}>
+        <button type="submit" className="btn-primary w-full" disabled={busy || mismatch}>
           {busy ? "Creating your account…" : "Create account"}
         </button>
       </form>
       <div className="my-5 flex items-center gap-3 text-xs font-bold text-rose-300">
         <span className="h-px flex-1 bg-rose-100" /> OR <span className="h-px flex-1 bg-rose-100" />
       </div>
-      <button type="button" className="btn-secondary w-full" disabled={busy} onClick={() => void run(loginWithGoogle)}>
+      <button type="button" className="btn-secondary w-full" disabled={busy} onClick={() => void run(loginWithGoogle, next)}>
         <GoogleIcon /> Sign up with Google
       </button>
       <p className="mt-6 text-center text-sm text-ink-soft">
