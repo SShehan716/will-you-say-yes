@@ -1,0 +1,77 @@
+rules_version = '2';
+
+// Limits mirror src/lib/limits.ts.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function str(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    // ---------- users/{uid}: private profile ----------
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['displayName', 'email', 'gender', 'createdAt'])
+        && str(request.resource.data.displayName, 60)
+        && str(request.resource.data.email, 254)
+        && request.resource.data.gender in ['boy', 'girl', 'other'];
+      allow delete: if false;
+    }
+
+    // ---------- proposals/{id} ----------
+    function validProposal(d) {
+      return d.keys().hasOnly(['ownerId', 'template', 'recipientName', 'ownerName', 'intro',
+                               'questions', 'finalMessage', 'theme', 'createdAt', 'updatedAt'])
+        && d.ownerId == request.auth.uid
+        && d.template in ['marry', 'dayout', 'valentine', 'dinner', 'partner', 'sorry', 'custom']
+        && d.theme in ['rose', 'lavender', 'sunset', 'midnight']
+        && str(d.recipientName, 60) && d.recipientName.size() > 0
+        && str(d.ownerName, 60) && d.ownerName.size() > 0
+        && str(d.intro, 400)
+        && str(d.finalMessage, 400)
+        && d.questions is list && d.questions.size() > 0 && d.questions.size() <= 15
+        && d.updatedAt == request.time;
+    }
+
+    match /proposals/{proposalId} {
+      // Anyone holding the link can open it; nobody can enumerate other people's proposals.
+      allow get: if true;
+      allow list: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if signedIn()
+        && validProposal(request.resource.data)
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && validProposal(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      function isProposalOwner() {
+        return signedIn()
+          && get(/databases/$(database)/documents/proposals/$(proposalId)).data.ownerId == request.auth.uid;
+      }
+
+      // ---------- responses: written by the (anonymous) recipient, read by the owner ----------
+      match /responses/{responseId} {
+        allow create: if exists(/databases/$(database)/documents/proposals/$(proposalId))
+          && request.resource.data.keys().hasOnly(['answers', 'noAttempts', 'createdAt'])
+          && request.resource.data.answers is list
+          && request.resource.data.answers.size() <= 15
+          && request.resource.data.noAttempts is int
+          && request.resource.data.noAttempts >= 0
+          && request.resource.data.noAttempts <= 10000
+          && request.resource.data.createdAt == request.time;
+        allow read, delete: if isProposalOwner();
+        allow update: if false;
+      }
+    }
+  }
+}
