@@ -330,7 +330,7 @@ function Finale({
         )}
         {!preview && save === "error" && (
           <span className="text-red-600">
-            Couldn&apos;t send your answer.{" "}
+            We couldn&apos;t send your answer.{" "}
             <button type="button" className="underline" onClick={onRetry}>
               Try again
             </button>

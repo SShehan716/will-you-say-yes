@@ -14,6 +14,7 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { GENERIC_ERROR, reportError } from "@/lib/errors";
 import { auth, db, isFirebaseConfigured } from "@/lib/firebase";
 import type { Gender, UserProfile } from "@/lib/types";
 
@@ -171,12 +172,15 @@ export function authErrorMessage(err: unknown): string {
     "auth/popup-closed-by-user": "The Google window was closed before finishing.",
     "auth/cancelled-popup-request": "The Google window was closed before finishing.",
     "auth/popup-blocked": "Your browser blocked the Google sign-in window. Allow pop-ups and try again.",
-    "auth/operation-not-allowed":
-      "This sign-in method isn't enabled. Enable it in Firebase → Authentication → Sign-in method.",
-    "auth/unauthorized-domain": `Google sign-in isn't allowed on this domain yet. Add "${
-      typeof window === "undefined" ? "this domain" : window.location.hostname
-    }" in Firebase → Authentication → Settings → Authorized domains.`,
-    "auth/network-request-failed": "Network error. Check your connection and try again.",
+    // Misconfiguration on our side: keep the copy neutral, details go to the console.
+    "auth/operation-not-allowed": "This sign-in option is temporarily unavailable. Please try another method.",
+    "auth/unauthorized-domain": "Google sign-in is temporarily unavailable. Please use your email and password.",
+    "auth/unauthorized-continue-uri": GENERIC_ERROR,
+    "auth/network-request-failed": "Network error. Please check your connection and try again.",
+    "auth/user-disabled": "This account has been disabled. Please contact support.",
+    "auth/missing-password": "Please enter your password.",
   };
-  return map[code] ?? (err instanceof Error ? err.message : "Something went wrong.");
+  const misconfigured = ["auth/operation-not-allowed", "auth/unauthorized-domain", "auth/unauthorized-continue-uri"];
+  if (!map[code] || misconfigured.includes(code)) reportError(`auth error ${code || "(no code)"}`, err);
+  return map[code] ?? GENERIC_ERROR;
 }

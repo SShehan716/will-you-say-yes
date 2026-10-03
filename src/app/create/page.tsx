@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { ErrorState } from "@/components/ErrorState";
 import { HeartLoader } from "@/components/HeartLoader";
 import { Navbar } from "@/components/Navbar";
 import { ProposalPlayer } from "@/components/ProposalPlayer";
 import { QuestionEditor, TYPE_META } from "@/components/QuestionEditor";
 import { RequireAuth } from "@/components/RequireAuth";
+import { reportError } from "@/lib/errors";
 import { LIMITS } from "@/lib/limits";
 import { createProposal, getProposal, updateProposal, validateDraft } from "@/lib/proposals";
 import { blankQuestion, getTemplate, TEMPLATES, THEMES } from "@/lib/templates";
@@ -31,7 +33,8 @@ function Builder() {
   const editId = params.get("edit");
 
   const [draft, setDraft] = useState<ProposalDraft | null>(null);
-  const [loadError, setLoadError] = useState("");
+  const [loadState, setLoadState] = useState<"ok" | "not-found" | "failed">("ok");
+  const [attempt, setAttempt] = useState(0);
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -42,11 +45,14 @@ function Builder() {
     if (editId) {
       getProposal(editId)
         .then((p) => {
-          if (!p || p.ownerId !== user.uid) return setLoadError("We couldn't find that question.");
+          if (!p || p.ownerId !== user.uid) return setLoadState("not-found");
           const { template, recipientName, ownerName, intro, questions, finalMessage, theme } = p;
           setDraft({ template, recipientName, ownerName, intro, questions, finalMessage, theme });
         })
-        .catch(() => setLoadError("We couldn't load that question."));
+        .catch((err) => {
+          reportError("load proposal for editing", err);
+          setLoadState("failed");
+        });
     } else if (profile) {
       setDraft(
         draftFromTemplate(params.get("template"), profile.gender, {
@@ -54,15 +60,26 @@ function Builder() {
         }),
       );
     }
-  }, [draft, user, profile, editId, params]);
+  }, [draft, user, profile, editId, params, attempt]);
 
-  if (loadError) {
+  const back = (
+    <Link href="/dashboard" className="btn-secondary">
+      Back to my questions
+    </Link>
+  );
+  if (loadState === "not-found") {
+    return <ErrorState title="Question not found" message="It may have been deleted, or the link is incorrect." action={back} />;
+  }
+  if (loadState === "failed") {
     return (
-      <div className="panel mx-auto mt-10 max-w-md text-center">
-        <p className="text-5xl">💔</p>
-        <p className="mt-3 font-bold">{loadError}</p>
-        <Link href="/dashboard" className="btn-primary mt-6">Back to my questions</Link>
-      </div>
+      <ErrorState
+        title="We couldn't load this question"
+        onRetry={() => {
+          setLoadState("ok");
+          setAttempt((a) => a + 1);
+        }}
+        action={back}
+      />
     );
   }
   if (!draft) return <HeartLoader />;
@@ -84,7 +101,8 @@ function Builder() {
         router.push(`/dashboard/${id}?created=1`);
       }
     } catch (err) {
-      setErrors([err instanceof Error ? err.message : "Couldn't save. Please try again."]);
+      reportError("save proposal", err);
+      setErrors(["We couldn't save your question. Please check your connection and try again."]);
       setSaving(false);
     }
   };
