@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { ErrorState } from "@/components/ErrorState";
 import { HeartLoader } from "@/components/HeartLoader";
 import { Navbar } from "@/components/Navbar";
 import { RequireAuth } from "@/components/RequireAuth";
 import { ShareBox } from "@/components/ShareBox";
+import { reportError } from "@/lib/errors";
 import { getProposal, listResponses } from "@/lib/proposals";
 import type { Proposal, ProposalResponse } from "@/lib/types";
 
@@ -17,27 +19,37 @@ function Responses() {
   const { user } = useAuth();
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [responses, setResponses] = useState<ProposalResponse[] | null>(null);
-  const [error, setError] = useState("");
+  const [status, setStatus] = useState<"loading" | "ready" | "not-found" | "failed">("loading");
+  const [refreshError, setRefreshError] = useState("");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!user) return;
+    setStatus("loading");
     getProposal(id)
       .then(async (p) => {
-        if (!p || p.ownerId !== user.uid) throw new Error("not found");
+        if (!p || p.ownerId !== user.uid) return setStatus("not-found");
         setProposal(p);
         setResponses(await listResponses(id));
+        setStatus("ready");
       })
-      .catch(() => setError("We couldn't find that question."));
-  }, [id, user]);
+      .catch((err) => {
+        reportError("load proposal", err);
+        setStatus("failed");
+      });
+  }, [id, user, attempt]);
 
-  if (error) {
+  if (status === "not-found") {
     return (
-      <div className="panel mx-auto mt-10 max-w-md text-center">
-        <p className="text-5xl">💔</p>
-        <p className="mt-3 font-bold">{error}</p>
-        <Link href="/dashboard" className="btn-primary mt-6">Back to my questions</Link>
-      </div>
+      <ErrorState
+        title="Question not found"
+        message="It may have been deleted, or the link is incorrect."
+        action={<Link href="/dashboard" className="btn-primary">Back to my questions</Link>}
+      />
     );
+  }
+  if (status === "failed") {
+    return <ErrorState title="We couldn't load this question" onRetry={() => setAttempt((a) => a + 1)} action={<Link href="/dashboard" className="btn-secondary">Back to my questions</Link>} />;
   }
   if (!proposal || !responses) return <HeartLoader />;
 
@@ -63,13 +75,24 @@ function Responses() {
             type="button"
             className="text-sm font-bold text-rose-500 hover:underline"
             onClick={() => {
-              setResponses(null);
-              listResponses(id).then(setResponses).catch(() => setError("Couldn't refresh answers."));
+              setRefreshError("");
+              listResponses(id)
+                .then(setResponses)
+                .catch((err) => {
+                  reportError("refresh responses", err);
+                  setRefreshError("We couldn't refresh the answers. Please try again.");
+                });
             }}
           >
             ↻ Refresh
           </button>
         </div>
+
+        {refreshError && (
+          <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-600" role="alert">
+            {refreshError}
+          </p>
+        )}
 
         {responses.length === 0 ? (
           <div className="panel mt-4 text-center">

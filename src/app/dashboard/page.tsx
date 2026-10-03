@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { ErrorState } from "@/components/ErrorState";
 import { HeartLoader } from "@/components/HeartLoader";
 import { Navbar } from "@/components/Navbar";
 import { RequireAuth } from "@/components/RequireAuth";
+import { reportError } from "@/lib/errors";
 import { countResponses, deleteProposal, listMyProposals } from "@/lib/proposals";
 import { getTemplate } from "@/lib/templates";
 import type { Proposal } from "@/lib/types";
@@ -17,24 +19,32 @@ function Dashboard() {
   const { user, profile, signOut } = useAuth();
   const router = useRouter();
   const [rows, setRows] = useState<Row[] | null>(null);
-  const [error, setError] = useState("");
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [actionError, setActionError] = useState("");
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!user) return;
+    setLoadFailed(false);
     listMyProposals(user.uid)
       .then((ps) => Promise.all(ps.map(async (p) => ({ ...p, responses: await countResponses(p.id).catch(() => 0) }))))
       .then(setRows)
-      .catch(() => setError("Couldn't load your questions. Check your Firebase setup and try again."));
-  }, [user]);
+      .catch((err) => {
+        reportError("load proposals", err);
+        setLoadFailed(true);
+      });
+  }, [user, attempt]);
 
   const remove = async (id: string) => {
     setConfirmId(null);
+    setActionError("");
     try {
       await deleteProposal(id);
       setRows((r) => r?.filter((p) => p.id !== id) ?? null);
-    } catch {
-      setError("Couldn't delete that question.");
+    } catch (err) {
+      reportError("delete proposal", err);
+      setActionError("We couldn't delete this question. Please try again.");
     }
   };
 
@@ -48,9 +58,23 @@ function Dashboard() {
         <Link href="/create" className="btn-primary">+ New question</Link>
       </div>
 
-      {error && <p className="mt-6 rounded-2xl bg-red-50 p-4 font-semibold text-red-600">{error}</p>}
+      {actionError && (
+        <p className="mt-6 rounded-2xl bg-red-50 p-4 font-semibold text-red-600" role="alert">
+          {actionError}
+        </p>
+      )}
 
-      {!rows && !error && <HeartLoader />}
+      {loadFailed && (
+        <ErrorState
+          title="We couldn't load your questions"
+          onRetry={() => {
+            setRows(null);
+            setAttempt((a) => a + 1);
+          }}
+        />
+      )}
+
+      {!rows && !loadFailed && <HeartLoader />}
 
       {rows?.length === 0 && (
         <div className="panel mt-10 text-center">
