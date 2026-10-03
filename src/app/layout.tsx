@@ -23,7 +23,11 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${nunito.variable} ${playfair.variable} ${dancing.variable} font-sans antialiased`}>
+      {/* Browser extensions (Grammarly, ColorZilla, …) inject attributes on <body> before hydration. */}
+      <body
+        className={`${nunito.variable} ${playfair.variable} ${dancing.variable} font-sans antialiased`}
+        suppressHydrationWarning
+      >
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
