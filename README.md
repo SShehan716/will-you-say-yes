@@ -44,9 +44,10 @@ Build a romantic questionnaire (*Will you marry me?*, *Be my Valentine?*, *Day o
    ```bash
    npm i -g firebase-tools
    firebase login
-   firebase use --add          # pick your project
+   firebase use --add          # pick YOUR project (overrides the default in .firebaserc)
    firebase deploy --only firestore:rules
    ```
+   `.firebaserc` points at the maintainer's project. Forks must run `firebase use --add`, or deploys will fail with a permission error.
 
 ### 2. Local
 ```bash
